@@ -6,9 +6,7 @@ var handlebars = require('express-handlebars')
 app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 
-var fortunes = [
-  "ты победишь", "ты проиграешь"
-];
+var fortune = require('./lib/fortune.js');
 
 app.set('port', process.env.PORT || 3000);
 
@@ -19,8 +17,7 @@ app.get('/', function(req, res) {
 });
 
 app.get('/about', function(req, res) {
-  var randomFortune = fortunes[Math.floor(Math.random() * fortunes.length)];
-  res.render('about', {fortune: randomFortune});
+  res.render('about', {fortune: fortune.getFortune()});
 });
 
 app.use(function(req, res, next) {
