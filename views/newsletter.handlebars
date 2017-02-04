@@ -1,21 +1,49 @@
 <h2>Подпишитесь на нашу рассылку для получения новостей и специальных предложений!</h2>
-<form action="/process?form=newsletter" method="post">
-  <input type="hidden" name="_csrf" value="{{csrf}}">
-  <div class="form-group">
-    <label for="fieldName" class="col-sm-2 control-label">Имя</label>
-    <div class="col-sm-4">
-      <input type="text" class="form-control" id="fieldName" name="name">
+<div class="formContainer">
+  <form class="form-horizontal newsletterForm" role="form" action="/process?form=newsletter" method="post">
+    <input type="hidden" name="_csrf" value="{{csrf}}">
+    <div class="form-group">
+      <label for="fieldName" class="col-sm-2 control-label">Имя</label>
+      <div class="col-sm-4">
+        <input type="text" class="form-control" id="fieldName" name="name">
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <label for="fieldEmail" class="col-sm-2 control-label">Электронный адрес</label>
-    <div class="col-sm-4">
-      <input type="email" class="form-control" required id="fieldEmail" name="email">
+    <div class="form-group">
+      <label for="fieldEmail" class="col-sm-2 control-label">Электронный адрес</label>
+      <div class="col-sm-4">
+        <input type="email" class="form-control" required id="fieldEmail" name="email">
+      </div>
     </div>
-  </div>
-  <div class="form-group">
-    <div class="col-sm-offset-2 col-sm-4">
-      <button type="submit" class="btn btn-default">Зарегистрироваться</button>
+    <div class="form-group">
+      <div class="col-sm-offset-2 col-sm-4">
+        <button type="submit" class="btn btn-default">Зарегистрироваться</button>
+      </div>
     </div>
-  </div>
-</form>
+  </form>
+</div>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelector('.newsletterForm').onsubmit = function(evt) {
+      evt.preventDefault();
+      
+      var action = this.getAttribute('action');
+      var container = this.closest('.formContainer');
+      
+      var xhr = new XMLHttpRequest();
+      xhr.open('post', action);
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); //для праильной работы req.xhr на сервере
+      xhr.onload = function() {
+        var data = JSON.parse(xhr.responseText);
+        if (data.success) {
+          container.innerHTML = '<h2>Thank you!</h2>';
+        } else {
+          container.innerHTML = 'Возникла проблема';
+        }
+      };
+      xhr.onerror = function() {
+        container.innerHTML = 'Возникла ошибка';
+      };
+      xhr.send(new FormData(this));
+    };
+  });
+</script>
