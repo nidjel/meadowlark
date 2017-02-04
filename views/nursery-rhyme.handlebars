@@ -1,0 +1,43 @@
+{{#section 'head'}}
+  <script src="//cdnjs.cloudflare.com/ajax/libs/handlebars.js/1.3.0/handlebars.min.js"></script>
+  
+  <script id="nurseryRhymeTemplate" type="text/x-handlebars-template">
+    У Мэри был маленький <b>\{{animal}}</b>, его </b>\{{bodyPart}}</b> был <b>\{{adjective}}</b>, как <b>\{{noun}}</b>.
+  </script>
+{{/section}}
+
+
+<div id="nurseryRhyme">Нажмите кнопку...</div>
+<hr>
+<button id="btnNurseryRhyme">Генерация детского стишка</button>
+<button id="btnNurseryRhymeAjax">Генерация детского стишка из AJAX</button>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+  
+  var nurseryRhymeTemplate = Handlebars.compile(document.getElementById('nurseryRhymeTemplate').innerHTML);
+  
+  var nurseryRhyme = document.getElementById('nurseryRhyme');
+  
+  document.getElementById('btnNurseryRhyme').onclick = function(evt) {
+    evt.preventDefault();
+    nurseryRhyme.innerHTML = nurseryRhymeTemplate({
+      animal: 'василиск',
+      bodyPart: 'хвост',
+      adjective: 'острый',
+      noun: 'иголка'
+    });
+  };
+  
+  document.getElementById('btnNurseryRhymeAjax').onclick = function(evt) {
+    evt.preventDefault();
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', '/data/nursery-rhyme');
+    xhr.onload = function() {
+      nurseryRhyme.innerHTML = nurseryRhymeTemplate(JSON.parse(xhr.responseText));
+    };
+    xhr.send();
+  };
+  
+});
+</script>
