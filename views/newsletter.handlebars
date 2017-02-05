@@ -31,13 +31,13 @@
       
       var xhr = new XMLHttpRequest();
       xhr.open('post', action);
-      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); //для праильной работы req.xhr на сервере
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest'); //для правильной работы req.xhr на сервере
       xhr.onload = function() {
         var data = JSON.parse(xhr.responseText);
         if (data.success) {
           container.innerHTML = '<h2>Thank you!</h2>';
         } else {
-          container.innerHTML = 'Возникла проблема';
+          container.innerHTML = 'Возникла проблема: ' + data.error;
         }
       };
       xhr.onerror = function() {

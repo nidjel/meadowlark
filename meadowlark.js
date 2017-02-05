@@ -18,7 +18,11 @@ var handlebars = require('express-handlebars')
 app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 
+var credetials = require('./credentials.js');
+
 var fortune = require('./lib/fortune.js');
+
+var VALID_EMAIL_REGEX = new RegExp('/^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/');
 
 app.disable('x-powered-by');
 
@@ -26,16 +30,29 @@ app.set('port', process.env.PORT || 3000);
 
 app.use(express.static(__dirname + '/public'));
 
-app.use(require('body-parser').urlencoded({extended: true})); //для обработки post req.body
+app.use(require('cookie-parser')(credetials.cookieSecret));
+app.use(require('express-session')({
+  resave: false,
+  saveUninitialized: false,
+  secret: credetials.cookieSecret
+}));
 
-app.use(function(req, res, next) {
+app.use(require('body-parser').urlencoded({extended: true})); //для обработки req.body при post запросах
+
+app.use(function(req, res, next) { //установка глобального контекста для представлений
   res.locals.showTests = app.get('env') !== 'production' && req.query.test === '1';
   
   if (!res.locals.partials) res.locals.partials = {};
   res.locals.partials.weatherContext = getWeatherData();
+  
+  //если имеется экстренное сообщение, переместим его в контекст, а затем удалим
+  res.locals.flash = req.session.flash;
+  delete req.session.flash;
+  
   next();
 });
 
+//маршрутизация
 app.get('/', function(req, res) {
   res.render('home');
 });
@@ -56,30 +73,84 @@ app.get('/newsletter', function(req, res) {
 });
 
 app.post('/process', function(req, res) {
-  //если форму отправили в кодировке multipart/form-data (например с помощью FormData)
+  //если оправили форму стандартным способом html
+  if (req.headers['content-type'] === 'application/x-www-form-urlencoded') {
+    console.log(req.body);
+    
+    req.session.flash = {
+      type: 'success',
+      intro: 'Спасибо!',
+      message: 'Вы были подписаны на информационный бюллетень.'
+    };
+    return res.redirect(303, '/thank-you');
+  }
+  
+    //обработка формы в кодировке multipart/form-data (например с помощью FormData)
+    var form = new formidable.IncomingForm();
+
+    form.parse(req, function(err, fields, fiels) {
+      if (err) {
+        if (req.xhr) {
+          return res.json({error: 'Ошибка обработки.'});
+        }
+        req.session.flash = {
+          type: 'danger',
+          intro: 'Ошибка сервера!',
+          message: 'Попробуйте еще раз.'
+        };
+        return res.redirect(303, '/error');
+      }
+
+      if (!fields.email.match(VALID_EMAIL_REGEX)) {
+        if (req.xhr) {
+           return res.json({error: 'Некорректный адрес почты.'});
+        }
+        req.session.flash = {
+          type: 'danger',
+          intro: 'Ошибка проверки!',
+          message: 'Введенный адрес почты некорректен.'
+        };
+        return res.redirect(303, '/thank-you');
+      }
+
+      if (req.xhr || req.accepts('json,html') === 'json') {
+        res.send({success: true});
+      } else {
+        req.session.flash = {
+          type: 'success',
+          intro: 'Спасибо!',
+          message: 'Вы были подписаны на информационный бюллетень!'
+        };
+        return res.redirect(303, '/thank-you');
+      }
+    });
+});
+
+app.get('/contest/vacation-photo', function(req, res) {
+  var now = new Date();
+  res.render('contest/vacation-photo', {
+   year: now.getFullYear(), month: now.getMonth() 
+  });
+});
+
+app.post('/contest/vacation-photo/:year/:month', function(req, res) {
   var form = new formidable.IncomingForm();
   form.parse(req, function(err, fields, fiels) {
     if (err) return res.redirect(303, '/error');
+    console.log('received fields:');
     console.log(fields);
-  });
-  
-  if (req.xhr || req.accepts('json,html') === 'json') {
-    res.send({success: true});
-  } else {
-    console.log('Form (from querystring): ' + req.query.form);
-    console.log('CSRF token (from hidden form field): ' + req.body._csrf);
-    console.log('Name (from visible form field): ' + req.body.name);
-    console.log('Email (from visible form field): ' + req.body.email);
+    console.log('received fiels:');
+    console.log(fiels);
     res.redirect(303, '/thank-you');
-  }
-});
+  })
+})
 
 app.get('/nursery-rhyme', function(req, res) {
   res.render('nursery-rhyme');
 });
 
 app.get('/data/nursery-rhyme', function(req, res) {
-  res.json({
+  res.json({ //данные для клиентской шаблонизации
       animal: 'василиск',
       bodyPart: 'хвост',
       adjective: 'острый',
