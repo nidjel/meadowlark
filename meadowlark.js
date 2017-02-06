@@ -52,6 +52,20 @@ app.use(function(req, res, next) { //установка глобального �
   next();
 });
 
+//журналирование
+switch(app.get('env')) {
+  case 'development':
+    //сжатое многоцветное журналирование для разработки
+    app.use(require('morgan')('dev'));
+    break;
+  case 'production': 
+    //модуль express-logger поддерживает ежедневное чередование файлов журналов
+    app.use(require('express-logger')({
+      path:__dirname + 'log/requests.log'
+    }));
+    break;
+}
+
 //маршрутизация
 app.get('/', function(req, res) {
   res.render('home');
@@ -170,7 +184,7 @@ app.use(function(err, req, res, next) {
 });
 
 app.listen(app.get('port'), function() {
-  console.log('Express is running on ' + app.get('port'));
+  console.log('Express is running on ' + app.get('port') + ' В режиме: ' + app.get('env'));
 });
 
 function getWeatherData() {
