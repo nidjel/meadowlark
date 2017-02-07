@@ -3,6 +3,8 @@ var app = express();
 
 var formidable = require('formidable');
 
+var fs = require('fs');
+
 var handlebars = require('express-handlebars')
   .create({
     defaultLayout: 'main',
@@ -18,7 +20,78 @@ var handlebars = require('express-handlebars')
 app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 
-var credetials = require('./credentials.js');
+var credentials = require('./credentials.js');
+
+var Vacation = require('./models/vacation.js');
+
+//database configuration
+var mongoose = require('mongoose');
+var options = {
+    server: {
+       socketOptions: { keepAlive: 1 } 
+    }
+};
+switch (app.get('env')) {
+  case 'development':
+    mongoose.connect(credentials.mongo.development.connectionString, options);
+    break;
+  case 'production':
+    mongoose.connect(credentials.mongo.production.connectionString, options);
+    break;
+  default:
+    throw new Error('Unknown execution environment: ' + app.get('env'));
+}
+
+// initialize vacations
+Vacation.find(function(err, vacations) {
+  if (err) return console.error(err);
+  if (vacations.length) return;
+  
+  new Vacation({
+    name: 'Hood River Day Trip',
+    slug: 'hood-river-day-trip',
+    category: 'Day Trip',
+    sku: 'HR199',
+    description: 'Spend a day sailing on the Columbia and ' + 
+        'enjoying craft beers in Hood River!',
+    priceInCents: 9995,
+    tags: ['day trip', 'hood river', 'sailing', 'windsurfing', 'breweries'],
+    inSeason: true,
+    maximumGuests: 16,
+    available: true,
+    packagesSold: 0,
+  }).save();
+
+  new Vacation({
+    name: 'Oregon Coast Getaway',
+    slug: 'oregon-coast-getaway',
+    category: 'Weekend Getaway',
+    sku: 'OC39',
+    description: 'Enjoy the ocean air and quaint coastal towns!',
+    priceInCents: 269995,
+    tags: ['weekend getaway', 'oregon coast', 'beachcombing'],
+    inSeason: false,
+    maximumGuests: 8,
+    available: true,
+    packagesSold: 0,
+  }).save();
+
+  new Vacation({
+    name: 'Rock Climbing in Bend',
+    slug: 'rock-climbing-in-bend',
+    category: 'Adventure',
+    sku: 'B99',
+    description: 'Experience the thrill of rock climbing in the high desert.',
+    priceInCents: 289995,
+    tags: ['weekend getaway', 'bend', 'high desert', 'rock climbing', 'hiking', 'skiing'],
+    inSeason: true,
+    requiresWaiver: true,
+    maximumGuests: 4,
+    available: false,
+    packagesSold: 0,
+    notes: 'The tour guide is currently recovering from a skiing accident.',
+  }).save();
+});
 
 var fortune = require('./lib/fortune.js');
 
@@ -30,11 +103,11 @@ app.set('port', process.env.PORT || 3000);
 
 app.use(express.static(__dirname + '/public'));
 
-app.use(require('cookie-parser')(credetials.cookieSecret));
+app.use(require('cookie-parser')(credentials.cookieSecret));
 app.use(require('express-session')({
   resave: false,
   saveUninitialized: false,
-  secret: credetials.cookieSecret
+  secret: credentials.cookieSecret
 }));
 
 app.use(require('body-parser').urlencoded({extended: true})); //для обработки req.body при post запросах
@@ -52,7 +125,7 @@ app.use(function(req, res, next) { //установка глобального �
   next();
 });
 
-//журналирование
+//журналирование (логирование - logging)
 switch(app.get('env')) {
   case 'development':
     //сжатое многоцветное журналирование для разработки
@@ -61,7 +134,7 @@ switch(app.get('env')) {
   case 'production': 
     //модуль express-logger поддерживает ежедневное чередование файлов журналов
     app.use(require('express-logger')({
-      path:__dirname + 'log/requests.log'
+      path:__dirname + '/log/requests.log'
     }));
     break;
 }
@@ -140,24 +213,50 @@ app.post('/process', function(req, res) {
     });
 });
 
+
 app.get('/contest/vacation-photo', function(req, res) {
   var now = new Date();
   res.render('contest/vacation-photo', {
-   year: now.getFullYear(), month: now.getMonth() 
+    year: now.getFullYear(),
+    month: now.getMonth()
   });
 });
 
+//создаем каталог для хранения загруженных файлов
+var dataDir = __dirname + '/data';
+var vacationPhotoDir = dataDir + '/vacation-photo';
+fs.existsSync(dataDir) || fs.mkdirSync(dataDir);
+fs.existsSync(vacationPhotoDir) || fs.mkdirSync(vacationPhotoDir);
+
+function saveContestEntry(contestName, email, year, month, photoPath) {
+  
+}
+
 app.post('/contest/vacation-photo/:year/:month', function(req, res) {
   var form = new formidable.IncomingForm();
-  form.parse(req, function(err, fields, fiels) {
-    if (err) return res.redirect(303, '/error');
-    console.log('received fields:');
-    console.log(fields);
-    console.log('received fiels:');
-    console.log(fiels);
-    res.redirect(303, '/thank-you');
-  })
-})
+  form.parse(req, function(err, fields, files) {
+    if (err) {
+      req.session.flash = {
+        type: 'danger',
+        intro: 'Упс!',
+        message: 'Во время обработки отправленной ВАми формы произошла ошибка. Попробуйте еще раз.'
+      };
+      return res.redirect(303, '/contest/vaction-photo');
+    }
+    var photo = files.photo;
+    var dir = vacationPhotoDir + '/' + Date.now();
+    var path = dir + '/' + photo.name;
+    fs.mkdirSync(dir);
+    fs.renameSync(photo.path, path);
+    saveContestEntry('vacation-photo', fields.email, req.params.year, req.params.month, path);
+    req.session.flash = {
+      type: 'success',
+      intro: 'Удачи!',
+      message: 'Вы стали участником конкурса.'
+    };
+    res.redirect(303, '/contest/vaction-photo/entries');
+  });
+});
 
 app.get('/nursery-rhyme', function(req, res) {
   res.render('nursery-rhyme');
@@ -169,6 +268,23 @@ app.get('/data/nursery-rhyme', function(req, res) {
       bodyPart: 'хвост',
       adjective: 'острый',
       noun: 'иголка'
+  });
+});
+
+app.get('/vacations',  function(req, res) {
+  Vacation.find({available: true}, function(err, vacations) {
+    var context = {
+      vacations: vacations.map(function(vacation) {
+        return {
+          sku: vacation.sku,
+          name: vacation.name,
+          description: vacation.description,
+          price: vacation.getDisplayPrice(),
+          inSeason: vacation.inSeason
+        }
+      })
+    };
+    res.render('vacations', context);
   });
 });
 
