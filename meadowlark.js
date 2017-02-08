@@ -239,7 +239,7 @@ app.post('/contest/vacation-photo/:year/:month', function(req, res) {
       req.session.flash = {
         type: 'danger',
         intro: 'Упс!',
-        message: 'Во время обработки отправленной ВАми формы произошла ошибка. Попробуйте еще раз.'
+        message: 'Во время обработки отправленной Вами формы произошла ошибка. Попробуйте еще раз.'
       };
       return res.redirect(303, '/contest/vaction-photo');
     }
@@ -286,6 +286,46 @@ app.get('/vacations',  function(req, res) {
     };
     res.render('vacations', context);
   });
+});
+
+app.get('/cart/add', function(req, res) {
+  var cart = req.session.cart || (req.session.cart = {items: []});
+  Vacation.findOne({sku: req.query.sku}, function(err, vacation) {
+    if (err) return next(err);
+    if (!vacation) return next(new Error('Нет тура с таким sku' + req.query.sku));
+    cart.items.push({
+      vacation: vacation,
+      guests: req.query.guests || 1
+    });
+    vacation.packagesSold++;
+    vacation.save();
+    res.redirect(303, '/cart');
+  });
+});
+
+app.get('/cart', function(req, res) {
+  var cart = req.session.cart;
+  if (!cart) next();
+  res.render('cart', {cart: cart});
+});
+
+app.get('/cart/checkout', function(req, res) {
+  var cart = req.session.cart;
+  if (!cart) next();
+  res.render('cart-checkout');
+});
+
+app.post('/cart/checkout', function(req, res) {
+  var cart = req.session.cart;
+  if (!cart) next(new Error('Cart does not exist.'));
+  var name = req.body.name || '', email = req.body.email || '';
+  // assign a random cart ID; normally we would use a database ID here
+  cart.number = Math.random().toString().replace(/^0\.0*/, '');
+  cart.billing = {
+      name: name,
+      email: email,
+  };
+  res.render('cart-thank-you', { cart: cart });
 });
 
 app.use(function(req, res) {
