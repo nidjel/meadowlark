@@ -328,6 +328,37 @@ app.post('/cart/checkout', function(req, res) {
   res.render('cart-thank-you', { cart: cart });
 });
 
+var vacationInSeasonListener = require('./models/vacationInSeasonListener.js');
+
+app.get('/notify-me-when-in-season', function(req, res) {
+  res.render('notify-me-when-in-season', {sku: req.query.sku});
+});
+
+app.post('/notify-me-when-in-season', function(req, res) {
+  vacationInSeasonListener.update(
+    {email: req.body.email},
+    {$push: {skus: req.body.sku}},
+    {upsert: true},
+    function(err) {
+      if (err) {
+        console.log(err.stack);
+        req.session.flash = {
+          type: 'danger',
+          intro: 'Упс!',
+          message: 'При обработке вашего запроса произошла ошибка'
+        };
+        return res.redirect(303, '/vacations');
+      }
+      req.session.flash = {
+        type: 'success',
+        intro: 'Спасибо!',
+        message: 'Вы будете оповещены, когда наступит сезон для этого тура.'
+      };
+      return res.redirect(303, '/vacations');
+    }
+  )
+});
+
 app.use(function(req, res) {
   res.status(404);
   res.render('404');
