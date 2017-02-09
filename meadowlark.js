@@ -1,10 +1,15 @@
-var express = require('express');
+var express = require('express'),
+    credentials = require('./credentials.js'),
+    formidable = require('formidable'),
+    fortune = require('./lib/fortune.js'),
+    fs = require('fs'),
+    Vacation = require('./models/vacation.js'),
+    VacationInSeasonListener = require('./models/vacationInSeasonListener.js');
+
 var app = express();
+app.disable('x-powered-by');
 
-var formidable = require('formidable');
-
-var fs = require('fs');
-
+// set up handlebars view engine
 var handlebars = require('express-handlebars')
   .create({
     defaultLayout: 'main',
@@ -16,13 +21,33 @@ var handlebars = require('express-handlebars')
       }
     }
   });
-
 app.engine('handlebars', handlebars.engine);
 app.set('view engine', 'handlebars');
 
-var credentials = require('./credentials.js');
+app.set('port', process.env.PORT || 3000);
 
-var Vacation = require('./models/vacation.js');
+//logging
+switch(app.get('env')) {
+  case 'development':
+    //сжатое многоцветное журналирование для разработки
+    app.use(require('morgan')('dev'));
+    break;
+  case 'production': 
+    //модуль express-logger поддерживает ежедневное чередование файлов журналов
+    app.use(require('express-logger')({
+      path:__dirname + '/log/requests.log'
+    }));
+    break;
+}
+
+app.use(require('cookie-parser')(credentials.cookieSecret));
+app.use(require('express-session')({
+  resave: false,
+  saveUninitialized: false,
+  secret: credentials.cookieSecret
+}));
+app.use(express.static(__dirname + '/public'));
+app.use(require('body-parser').urlencoded({extended: true})); //для обработки req.body при post запросах
 
 //database configuration
 var mongoose = require('mongoose');
@@ -93,308 +118,21 @@ Vacation.find(function(err, vacations) {
   }).save();
 });
 
-var fortune = require('./lib/fortune.js');
-
-var VALID_EMAIL_REGEX = new RegExp('/^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$/');
-
-app.disable('x-powered-by');
-
-app.set('port', process.env.PORT || 3000);
-
-app.use(express.static(__dirname + '/public'));
-
-app.use(require('cookie-parser')(credentials.cookieSecret));
-app.use(require('express-session')({
-  resave: false,
-  saveUninitialized: false,
-  secret: credentials.cookieSecret
-}));
-
-app.use(require('body-parser').urlencoded({extended: true})); //для обработки req.body при post запросах
-
-app.use(function(req, res, next) { //установка глобального контекста для представлений
-  res.locals.showTests = app.get('env') !== 'production' && req.query.test === '1';
-  
-  if (!res.locals.partials) res.locals.partials = {};
-  res.locals.partials.weatherContext = getWeatherData();
-  
+// flash message middleware
+app.use(function(req, res, next) {
   //если имеется экстренное сообщение, переместим его в контекст, а затем удалим
   res.locals.flash = req.session.flash;
   delete req.session.flash;
-  
   next();
 });
 
-//журналирование (логирование - logging)
-switch(app.get('env')) {
-  case 'development':
-    //сжатое многоцветное журналирование для разработки
-    app.use(require('morgan')('dev'));
-    break;
-  case 'production': 
-    //модуль express-logger поддерживает ежедневное чередование файлов журналов
-    app.use(require('express-logger')({
-      path:__dirname + '/log/requests.log'
-    }));
-    break;
-}
-
-//маршрутизация
-app.get('/', function(req, res) {
-  res.render('home');
+// set 'showTests' context property if the querystring contains test=1
+app.use(function(req, res, next) {
+  res.locals.showTests = app.get('env') !== 'production' && req.query.test === '1';
+  next();
 });
 
-app.get('/about', function(req, res) {
-  res.render('about', {
-    fortune: fortune.getFortune(),
-    pageTestScript: '/qa/tests-about.js'
-  });
-});
-
-app.get('/thank-you', function(req, res) {
-  res.render('thank-you');
-});
-
-app.get('/newsletter', function(req, res) {
-  res.render('newsletter', {csrf: 'CSRF token goes here'});
-});
-
-app.post('/process', function(req, res) {
-  //если оправили форму стандартным способом html
-  if (req.headers['content-type'] === 'application/x-www-form-urlencoded') {
-    console.log(req.body);
-    
-    req.session.flash = {
-      type: 'success',
-      intro: 'Спасибо!',
-      message: 'Вы были подписаны на информационный бюллетень.'
-    };
-    return res.redirect(303, '/thank-you');
-  }
-  
-    //обработка формы в кодировке multipart/form-data (например с помощью FormData)
-    var form = new formidable.IncomingForm();
-
-    form.parse(req, function(err, fields, fiels) {
-      if (err) {
-        if (req.xhr) {
-          return res.json({error: 'Ошибка обработки.'});
-        }
-        req.session.flash = {
-          type: 'danger',
-          intro: 'Ошибка сервера!',
-          message: 'Попробуйте еще раз.'
-        };
-        return res.redirect(303, '/error');
-      }
-
-      if (!fields.email.match(VALID_EMAIL_REGEX)) {
-        if (req.xhr) {
-           return res.json({error: 'Некорректный адрес почты.'});
-        }
-        req.session.flash = {
-          type: 'danger',
-          intro: 'Ошибка проверки!',
-          message: 'Введенный адрес почты некорректен.'
-        };
-        return res.redirect(303, '/thank-you');
-      }
-
-      if (req.xhr || req.accepts('json,html') === 'json') {
-        res.send({success: true});
-      } else {
-        req.session.flash = {
-          type: 'success',
-          intro: 'Спасибо!',
-          message: 'Вы были подписаны на информационный бюллетень!'
-        };
-        return res.redirect(303, '/thank-you');
-      }
-    });
-});
-
-
-app.get('/contest/vacation-photo', function(req, res) {
-  var now = new Date();
-  res.render('contest/vacation-photo', {
-    year: now.getFullYear(),
-    month: now.getMonth()
-  });
-});
-
-//создаем каталог для хранения загруженных файлов
-var dataDir = __dirname + '/data';
-var vacationPhotoDir = dataDir + '/vacation-photo';
-fs.existsSync(dataDir) || fs.mkdirSync(dataDir);
-fs.existsSync(vacationPhotoDir) || fs.mkdirSync(vacationPhotoDir);
-
-function saveContestEntry(contestName, email, year, month, photoPath) {
-  
-}
-
-app.post('/contest/vacation-photo/:year/:month', function(req, res) {
-  var form = new formidable.IncomingForm();
-  form.parse(req, function(err, fields, files) {
-    if (err) {
-      req.session.flash = {
-        type: 'danger',
-        intro: 'Упс!',
-        message: 'Во время обработки отправленной Вами формы произошла ошибка. Попробуйте еще раз.'
-      };
-      return res.redirect(303, '/contest/vaction-photo');
-    }
-    var photo = files.photo;
-    var dir = vacationPhotoDir + '/' + Date.now();
-    var path = dir + '/' + photo.name;
-    fs.mkdirSync(dir);
-    fs.renameSync(photo.path, path);
-    saveContestEntry('vacation-photo', fields.email, req.params.year, req.params.month, path);
-    req.session.flash = {
-      type: 'success',
-      intro: 'Удачи!',
-      message: 'Вы стали участником конкурса.'
-    };
-    res.redirect(303, '/contest/vaction-photo/entries');
-  });
-});
-
-app.get('/nursery-rhyme', function(req, res) {
-  res.render('nursery-rhyme');
-});
-
-app.get('/data/nursery-rhyme', function(req, res) {
-  res.json({ //данные для клиентской шаблонизации
-      animal: 'василиск',
-      bodyPart: 'хвост',
-      adjective: 'острый',
-      noun: 'иголка'
-  });
-});
-
-app.get('/set-currency/:currency', function(req, res) {
-  req.session.currency = req.params.currency;
-  return res.redirect(303, '/vacations');
-});
-
-function convertFromUSD(value, currency) {
-  switch(currency) {
-    case 'USD': return value * 1;
-    case 'GBP': return value * 0.6;
-    case 'BTC': return value * 0.00237;
-    default: return NaN;
-  }
-};
-
-app.get('/vacations',  function(req, res) {
-  Vacation.find({available: true}, function(err, vacations) {
-    var currency = req.session.currency || 'USD';
-    var context = {
-      currentcy: currency,
-      vacations: vacations.map(function(vacation) {
-        return {
-          sku: vacation.sku,
-          name: vacation.name,
-          description: vacation.description,
-          price: convertFromUSD(vacation.priceInCents/100, currency),
-          inSeason: vacation.inSeason
-        };
-      })
-    };
-    switch(currency) {
-      case 'USD': context.currencyUSD = 'selected'; break;
-      case 'GBP': context.currencyGBP = 'selected'; break;
-      case 'BTC': context.currencyBTC = 'selected'; break;
-    }
-    res.render('vacations', context);
-  });
-});
-
-app.get('/cart/add', function(req, res) {
-  var cart = req.session.cart || (req.session.cart = {items: []});
-  Vacation.findOne({sku: req.query.sku}, function(err, vacation) {
-    if (err) return next(err);
-    if (!vacation) return next(new Error('Нет тура с таким sku' + req.query.sku));
-    cart.items.push({
-      vacation: vacation,
-      guests: req.query.guests || 1
-    });
-    vacation.packagesSold++;
-    vacation.save();
-    res.redirect(303, '/cart');
-  });
-});
-
-app.get('/cart', function(req, res) {
-  var cart = req.session.cart;
-  if (!cart) next();
-  res.render('cart', {cart: cart});
-});
-
-app.get('/cart/checkout', function(req, res) {
-  var cart = req.session.cart;
-  if (!cart) next();
-  res.render('cart-checkout');
-});
-
-app.post('/cart/checkout', function(req, res) {
-  var cart = req.session.cart;
-  if (!cart) next(new Error('Cart does not exist.'));
-  var name = req.body.name || '', email = req.body.email || '';
-  // assign a random cart ID; normally we would use a database ID here
-  cart.number = Math.random().toString().replace(/^0\.0*/, '');
-  cart.billing = {
-      name: name,
-      email: email,
-  };
-  res.render('cart-thank-you', { cart: cart });
-});
-
-var vacationInSeasonListener = require('./models/vacationInSeasonListener.js');
-
-app.get('/notify-me-when-in-season', function(req, res) {
-  res.render('notify-me-when-in-season', {sku: req.query.sku});
-});
-
-app.post('/notify-me-when-in-season', function(req, res) {
-  vacationInSeasonListener.update(
-    {email: req.body.email},
-    {$push: {skus: req.body.sku}},
-    {upsert: true},
-    function(err) {
-      if (err) {
-        console.log(err.stack);
-        req.session.flash = {
-          type: 'danger',
-          intro: 'Упс!',
-          message: 'При обработке вашего запроса произошла ошибка'
-        };
-        return res.redirect(303, '/vacations');
-      }
-      req.session.flash = {
-        type: 'success',
-        intro: 'Спасибо!',
-        message: 'Вы будете оповещены, когда наступит сезон для этого тура.'
-      };
-      return res.redirect(303, '/vacations');
-    }
-  )
-});
-
-app.use(function(req, res) {
-  res.status(404);
-  res.render('404');
-});
-
-app.use(function(err, req, res, next) {
-  console.error(err.stack);
-  res.status(500);
-  res.render('500');
-});
-
-app.listen(app.get('port'), function() {
-  console.log('Express is running on ' + app.get('port') + ' В режиме: ' + app.get('env'));
-});
-
+// mocked weather data
 function getWeatherData() {
   return {
     locations: [
@@ -422,3 +160,44 @@ function getWeatherData() {
     ]
   };
 }
+
+// middleware to add weather data to context
+app.use(function(req, res, next) {
+  if (!res.locals.partials) res.locals.partials = {};
+  res.locals.partials.weatherContext = getWeatherData();
+  next();
+});
+
+// add routes
+require('./routes.js')(app);
+
+// add support for auto views
+var autoViews = {};
+app.use(function(req, res, next) {
+  var path = req.path.toLowerCase();
+  //проверка кэша
+  if (autoViews[path]) return res.render(autoViews[path]);
+  //проверяем наличие подходящего файла .handlebars
+  if (fs.existsSync(__dirname + '/views' + path + '.handlebars')) {
+    autoViews[path] = path.replace(/^\//, '');
+    return res.render(autoViews[path]);
+  }
+  next();//представление не найдено
+});
+
+// 404 catch-all handler (middleware)
+app.use(function(req, res) {
+  res.status(404);
+  res.render('404');
+});
+
+// 500 error handler (middleware)
+app.use(function(err, req, res, next) {
+  console.error(err.stack);
+  res.status(500);
+  res.render('500');
+});
+
+app.listen(app.get('port'), function() {
+  console.log('Express is running on ' + app.get('port') + ' В режиме: ' + app.get('env'));
+});
