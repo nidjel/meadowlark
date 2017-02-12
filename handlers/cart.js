@@ -6,21 +6,26 @@ exports.home = function(req, res) {
   res.render('cart', {cart: cart});
 };
 
-exports.addProcessGet = function(req, res) {
+function addToCart(sku, guests, req, res, next) {
   var cart = req.session.cart || (req.session.cart = {items: []});
   
-  Vacation.findOne({sku: req.query.sku}, function(err, vacation) {
+  Vacation.findOne({sku: sku}, function(err, vacation) {
     if (err) return next(err);
-    if (!vacation) return next(new Error('Нет тура с таким sku' + req.query.sku));
+    if (!vacation) return next(new Error('Нет тура с таким sku' + sku));
     cart.items.push({
       vacation: vacation,
-      guests: req.query.guests || 1
+      guests: guests || 1
     });
     
     vacation.packagesSold++;//надо бы обновлять базу в момент продажи, а не добавления тура в корзину
     vacation.save();
+    
     res.redirect(303, '/cart');
   });
+};
+
+exports.addProcessGet = function(req, res, next) {
+  addToCart(req.query.sku, req.query.guests, req, res, next);
 };
 
 exports.checkout = function(req, res) {
