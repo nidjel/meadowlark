@@ -26,7 +26,7 @@ app.set('view engine', 'handlebars');
 
 app.set('port', process.env.PORT || 3000);
 
-app.use('/api', require('cors')());
+app.use('/api', require('cors')());//для межсайтовых запросов
 
 //logging
 switch(app.get('env')) {
@@ -48,8 +48,13 @@ app.use(require('express-session')({
   saveUninitialized: false,
   secret: credentials.cookieSecret
 }));
-app.use(express.static(__dirname + '/public'));
 app.use(require('body-parser').urlencoded({extended: true})); //для обработки req.body при post запросах
+app.use(express.static(__dirname + '/public'));
+/*app.use(require('csurf')());//для защиты от CSRF атак
+app.use(function(req, res, next) {
+  res.locals._csrfToken = req.csrfToken();
+  next();
+});*/
 
 //database configuration
 var mongoose = require('mongoose');
@@ -134,7 +139,7 @@ app.use(function(req, res, next) {
   next();
 });
 
-// mocked weather data
+// mocked weather data; нужно подключение к внешнему api
 function getWeatherData() {
   return {
     locations: [
@@ -170,8 +175,18 @@ app.use(function(req, res, next) {
   next();
 });
 
+//создаем поддомен admin 
+var admin = express.Router();
+app.use(require('vhost')('admin.*', admin));
+
+admin.get('/', function(req, res) {
+  res.render('admin/home');
+});
+
+
 // add routes
 require('./routes.js')(app);
+
 
 //API
 var Attraction = require('./models/attraction.js');

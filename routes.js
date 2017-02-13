@@ -2,6 +2,7 @@ var main = require('./handlers/main.js'),
     vacations = require('./handlers/vacations.js'),
     contest = require('./handlers/contest.js'),
     cart = require('./handlers/cart.js'),
+    customer = require('./handlers/customer.js'),
     samples = require('./handlers/samples.js');
 
 module.exports = function(app) {
@@ -29,6 +30,14 @@ module.exports = function(app) {
   app.post('/cart/checkout', cart.checkoutProcessPost);
   app.get('/set-currency/:currency', cart.setCurrency);
   
-    // testing/sample routes
+  //customer routes
+  app.get('/customer/register', customer.register);
+  app.post('/customer/register', customer.processRegister);
+  app.get('/customer/:id', customer.home);
+  app.get('/customer/:id/preferences', customer.preferences);
+  app.get('/orders/:id', customer.orders);
+  app.post('/customer/:id/update', customer.ajaxUpdate);
+  
+  // testing/sample routes
   app.get('/data/nursery-rhyme', samples.nurseryRhymeData);
 };
