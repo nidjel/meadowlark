@@ -1,4 +1,5 @@
 var express = require('express'),
+    cartValidation = require('./lib/cartValidation.js'),
     credentials = require('./credentials.js'),
     formidable = require('formidable'),
     fortune = require('./lib/fortune.js'),
@@ -183,6 +184,9 @@ admin.get('/', function(req, res) {
   res.render('admin/home');
 });
 
+//cart validation
+app.use(cartValidation.checkWaivers);
+app.use(cartValidation.checkGuestCounts);
 
 // add routes
 require('./routes.js')(app);
